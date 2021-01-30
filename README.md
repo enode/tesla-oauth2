@@ -1,5 +1,5 @@
-# Tesla MFA
-A "proof-of-concept" on how to interact with the recent OAuth2 changes from Tesla and the new `/oauth2/` endpoint.
+# Tesla OAuth2 python script
+A "proof-of-concept" script on how to interact with the recent OAuth2 changes from Tesla and the new `/oauth2/` endpoint.
 
 Please note as of 29.01.21 (?) the reverse-engineered 2FA code is broken. Only non-2FA-accounts will give you a valid refresh/access token pair. I will update this script as soon as I have figured out what is going on.
 
