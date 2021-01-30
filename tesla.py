@@ -65,9 +65,16 @@ def login(email, password):
         "credential": password,
     }
 
-    resp = session.post(
-        "https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params, data=data, allow_redirects=False
-    )
+    for attempt in range(MAX_ATTEMPTS):
+        resp = session.post(
+            "https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params, data=data, allow_redirects=False
+        )
+        if resp.ok and "<title>" in resp.text:
+            print(f"Post auth form success - {attempt + 1} attempt(s).")
+            break
+        time.sleep(3)
+    else:
+        raise ValueError(f"Didn't post auth form in {MAX_ATTEMPTS} attempts.")
 
     # Determine if user has MFA enabled
     # In that case there is no redirect to `https://auth.tesla.com/void/callback` and app shows new form with Passcode / Backup Passcode field
@@ -95,7 +102,7 @@ def login(email, password):
         factor_id = resp.json()["data"][0]["id"]
 
         # Can use Passcode
-        data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "YOUR_PASSCODE"}
+        data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "653125"}
         resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
         # ^^ Content-Type - application/json
         print(resp.text)
@@ -116,43 +123,51 @@ def login(email, password):
             raise ValueError("Invalid passcode.")
 
         # Can use Backup Passcode
-        data = {"transaction_id": transaction_id, "backup_code": "ONE_OF_BACKUP_CODES"}
-        resp = session.post(
-            "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
-        )
-        # ^^ Content-Type - application/json
-        print(resp.text)
-        # {
-        #     "data": {
-        #         "valid": true,
-        #         "reason": null,
-        #         "message": null,
-        #         "enrolled": true,
-        #         "generatedAt": "2020-12-09T06:14:23.170Z",
-        #         "codesRemaining": 9,
-        #         "attemptsRemaining": 10,
-        #         "locked": false,
-        #     }
-        # }
-        if "error" in resp.text or not resp.json()["data"]["valid"]:
-            raise ValueError("Invalid backup passcode.")
+        # data = {"transaction_id": transaction_id, "backup_code": "3HZRJVC6D"}
+        # resp = session.post(
+        #     "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
+        # )
+        # # ^^ Content-Type - application/json
+        # print(resp.text)
+        # # {
+        # #     "data": {
+        # #         "valid": true,
+        # #         "reason": null,
+        # #         "message": null,
+        # #         "enrolled": true,
+        # #         "generatedAt": "2020-12-09T06:14:23.170Z",
+        # #         "codesRemaining": 9,
+        # #         "attemptsRemaining": 10,
+        # #         "locked": false,
+        # #     }
+        # # }
+        # if "error" in resp.text or not resp.json()["data"]["valid"]:
+        #     raise ValueError("Invalid backup passcode.")
 
         data = {"transaction_id": transaction_id}
-        resp = session.post(
-            "https://auth.tesla.com/oauth2/v3/authorize",
-            headers=headers,
-            params=params,
-            data=data,
-            allow_redirects=False,
-        )
 
+        for attempt in range(MAX_ATTEMPTS):
+            resp = session.post(
+                "https://auth.tesla.com/oauth2/v3/authorize",
+                headers=headers,
+                params=params,
+                data=data,
+                allow_redirects=False,
+            )
+            if resp.headers.get("location"):
+                print(f"Got location in {attempt + 1} attempt(s).")
+                break
+        else:
+            raise ValueError(f"Didn't get location in {MAX_ATTEMPTS} attempts.")
+            
     code = parse_qs(resp.headers["location"])["https://auth.tesla.com/void/callback?code"]
-
+    print("Code -", code)
+    
     headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
     payload = {
         "grant_type": "authorization_code",
         "client_id": "ownerapi",
-        "code_verifier": rand_str(108),
+        "code_verifier": code_verifier.decode("utf-8"),
         "code": code,
         "redirect_uri": "https://auth.tesla.com/void/callback",
     }
