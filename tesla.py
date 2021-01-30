@@ -1,46 +1,57 @@
+import base64
+import hashlib
+import os
 import re
 import random
-import string
+import time
 from urllib.parse import parse_qs
 
 import requests
 
+MAX_ATTEMPTS = 10
 CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
 UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
-X_TESLA_USER_AGENT = "TeslaApp/3.10.8-421/adff2e065/android/10"
+X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
 
 
-def rand_str(chars=43):
-    letters = string.ascii_lowercase + string.ascii_uppercase + string.digits + "-" + "_"
-    return "".join(random.choice(letters) for i in range(chars))
+def gen_params():
+    verifier_bytes = os.urandom(86)
+    code_verifier = base64.urlsafe_b64encode(verifier_bytes).rstrip(b"=")
+    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier).digest()).rstrip(b"=")
+    state = base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
+    return code_verifier, code_challenge, state
 
 
 def login(email, password):
-    session = requests.Session()
-
     headers = {
         "User-Agent": UA,
         "x-tesla-user-agent": X_TESLA_USER_AGENT,
         "X-Requested-With": "com.teslamotors.tesla",
     }
 
-    code_challenge = rand_str()
-    state = rand_str()
+    for attempt in range(MAX_ATTEMPTS):
+        code_verifier, code_challenge, state = gen_params()
 
-    params = (
-        ("audience", ""),
-        ("client_id", "ownerapi"),
-        ("code_challenge", code_challenge),
-        ("code_challenge_method", "S256"),
-        ("locale", "en"),
-        ("prompt", "login"),
-        ("redirect_uri", "https://auth.tesla.com/void/callback"),
-        ("response_type", "code"),
-        ("scope", "openid email offline_access"),
-        ("state", state),
-    )
+        params = (
+            ("client_id", "ownerapi"),
+            ("code_challenge", code_challenge),
+            ("code_challenge_method", "S256"),
+            ("redirect_uri", "https://auth.tesla.com/void/callback"),
+            ("response_type", "code"),
+            ("scope", "openid email offline_access"),
+            ("state", state),
+        )
 
-    resp = session.get("https://auth-global.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
+        session = requests.Session()
+        resp = session.get("https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
+
+        if resp.ok and "<title>" in resp.text:
+            print(f"Get auth form success - {attempt + 1} attempt(s).")
+            break
+        time.sleep(3)
+    else:
+        raise ValueError(f"Didn't get auth form in {MAX_ATTEMPTS} attempts.")
+
     csrf = re.search(r'name="_csrf".+value="([^"]+)"', resp.text).group(1)
     transaction_id = re.search(r'name="transaction_id".+value="([^"]+)"', resp.text).group(1)
 
