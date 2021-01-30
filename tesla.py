@@ -102,7 +102,7 @@ def login(email, password):
         factor_id = resp.json()["data"][0]["id"]
 
         # Can use Passcode
-        data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "653125"}
+        data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "YOUR_PASSCODE"}
         resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
         # ^^ Content-Type - application/json
         print(resp.text)
