@@ -69,7 +69,7 @@ def login(email, password):
         resp = session.post(
             "https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params, data=data, allow_redirects=False
         )
-        if resp.ok and "<title>" in resp.text:
+        if resp.ok and resp.status_code == 302:
             print(f"Post auth form success - {attempt + 1} attempt(s).")
             break
         time.sleep(3)
