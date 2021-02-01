@@ -1,4 +1,4 @@
-# Tesla OAuth2 script
+# Tesla OAuth script
 A "proof-of-concept" script on how to interact with the recent OAuth2 changes from Tesla and the new `/oauth2/` endpoint.
 
 ## How to run
