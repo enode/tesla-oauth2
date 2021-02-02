@@ -4,6 +4,7 @@ import os
 import re
 import random
 import time
+import argparse
 from urllib.parse import parse_qs
 
 import requests
@@ -173,7 +174,10 @@ def login(email, password):
     }
 
     resp = session.post("https://auth.tesla.com/oauth2/v3/token", headers=headers, json=payload)
-    access_token = resp.json()["access_token"]
+    resp_json = resp.json()
+    refresh_token = resp_json["refresh_token"]
+    access_token = resp_json["access_token"]
+    print("{\"refresh_token\": \"" + refresh_token + "\"}")
 
     headers["authorization"] = "bearer " + access_token
     payload = {
@@ -193,4 +197,9 @@ def login(email, password):
     print()
 
 if __name__ == "__main__":
-    login("youlookgoodtoday@domain.com", "Shhhh!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-e', '--email', type=str, required=True, help='E-mail used for myTesla account')
+    parser.add_argument('-p', '--password', type=str, required=True, help='myTesla account password')
+    args = parser.parse_args()
+
+    login(args.email, args.password)
