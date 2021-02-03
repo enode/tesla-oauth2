@@ -1,12 +1,13 @@
 import base64
 import hashlib
 import os
+import sys
 import re
 import random
 import time
 import argparse
+import json
 from urllib.parse import parse_qs
-
 import requests
 
 MAX_ATTEMPTS = 10
@@ -14,6 +15,14 @@ CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
 UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
 X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
 
+tokensFilename = ""
+tokens = {
+    "access_token": "",
+    "created_at": 0,
+    "expires_in": 0,
+    "refresh_token": ""
+}
+expiration = 0
 
 def gen_params():
     verifier_bytes = os.urandom(86)
@@ -22,6 +31,25 @@ def gen_params():
     state = base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
     return code_verifier, code_challenge, state
 
+def loadTokens():
+    global tokens, expiration
+    try:
+        with open(tokensFilename, "r") as R:
+            tokens = json.load(R)
+            expiration = tokens["created_at"] + tokens["expires_in"] - 86400
+            return True
+    except IOError as e:
+        print("Could not read from file %s: %s (pressing on in hopes of alternate authenticaiton)"%(tokensFilename, str(e)))
+        return False
+
+def saveTokens():
+    try:
+        with open(tokensFilename, "w") as W:
+            W.write(json.dumps(tokens))
+            return True
+    except IOError as e:
+        print("Could not write to file %s: %s"%(tokensFilename, str(e)))
+        return False
 
 def login(email, password):
     headers = {
@@ -30,6 +58,7 @@ def login(email, password):
         "X-Requested-With": "com.teslamotors.tesla",
     }
 
+    # Step 1: Obtain the login page
     for attempt in range(MAX_ATTEMPTS):
         code_verifier, code_challenge, state = gen_params()
 
@@ -53,6 +82,7 @@ def login(email, password):
     else:
         raise ValueError(f"Didn't get auth form in {MAX_ATTEMPTS} attempts.")
 
+    # Step 2: Obtain an authorization code
     csrf = re.search(r'name="_csrf".+value="([^"]+)"', resp.text).group(1)
     transaction_id = re.search(r'name="transaction_id".+value="([^"]+)"', resp.text).group(1)
 
@@ -160,9 +190,10 @@ def login(email, password):
                 break
         else:
             raise ValueError(f"Didn't get location in {MAX_ATTEMPTS} attempts.")
-            
+
+    # Step 3: Exchange authorization code for bearer token
     code = parse_qs(resp.headers["location"])["https://auth.tesla.com/void/callback?code"]
-    print("Code -", code)
+    # print("Code -", code)
     
     headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
     payload = {
@@ -177,29 +208,92 @@ def login(email, password):
     resp_json = resp.json()
     refresh_token = resp_json["refresh_token"]
     access_token = resp_json["access_token"]
-    print("{\"refresh_token\": \"" + refresh_token + "\"}")
+    # print("{\"refresh_token\": \"" + refresh_token + "\"}")
 
+    # Step 4: Exchange bearer token for access token
     headers["authorization"] = "bearer " + access_token
     payload = {
         "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
         "client_id": CLIENT_ID,
     }
     resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
-    owner_access_token = resp.json()["access_token"]
-    owner_headers = {**headers, "authorization": "bearer " + owner_access_token}
 
-    resp = session.get("https://owner-api.teslamotors.com/api/1/users/referral_data", headers=owner_headers)
-    print(resp.text)
-    print()
+    # save our tokens
+    resp_json = resp.json()
+    tokens["refresh_token"] = refresh_token
+    tokens["access_token"] = resp_json["access_token"]
+    tokens["created_at"] = resp_json["created_at"]
+    tokens["expires_in"] = resp_json["expires_in"]
+    saveTokens()
 
-    resp = session.get("https://owner-api.teslamotors.com/api/1/vehicles", headers=owner_headers)
+def refreshToken(email):
+    global tokens
+
+    headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": "ownerapi",
+        "refresh_token": tokens["refresh_token"],
+        "scope": "openid email offline_access",
+    }
+    session = requests.Session()
+
+    resp = session.post("https://auth.tesla.com/oauth2/v3/token", headers=headers, json=payload)
+    resp_json = resp.json()
+    refresh_token = resp_json["refresh_token"]
+    access_token = resp_json["access_token"]
+    print("{\"refresh_token\": \"" + refresh_token + "\"}")
+
+    # Step 4: Exchange bearer token for access token
+    headers["authorization"] = "bearer " + access_token
+    payload = {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "client_id": CLIENT_ID,
+    }
+    resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
+
+    # save our tokens
+    resp_json = resp.json()
+    tokens["refresh_token"] = refresh_token
+    tokens["access_token"] = resp_json["access_token"]
+    tokens["created_at"] = resp_json["created_at"]
+    tokens["expires_in"] = resp_json["expires_in"]
+    saveTokens()
+
+def requestData(dataPart):
+    print("Requesting data: \"%s\""%(dataPart))
+    session = requests.Session()
+    headers = {
+        "user-agent": UA,
+        "x-tesla-user-agent": X_TESLA_USER_AGENT,
+        "authorization": "bearer " + tokens["access_token"]
+        }
+ 
+    owner_headers = {**headers, "authorization": "bearer " + tokens["access_token"]}
+
+    resp = session.get("https://owner-api.teslamotors.com/api/1/" + dataPart, headers=owner_headers)
     print(resp.text)
     print()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--email', type=str, required=True, help='E-mail used for myTesla account')
-    parser.add_argument('-p', '--password', type=str, required=True, help='myTesla account password')
+    parser.add_argument('-p', '--password', type=str, required=False, default=None, help='myTesla account password')
+    parser.add_argument('-f', '--tokensfile', type=str, required=False, default="tesla.token", help='filename to use for token')
+    parser.add_argument('-d', '--data', type=str, required=False, default="vehicles", help='data part to request')
     args = parser.parse_args()
 
-    login(args.email, args.password)
+    tokensFilename = args.tokensfile
+    if( not loadTokens() ):
+        print("Tokens file not found: " + args.tokensfile)
+        print("Trying login with provided credentials")
+        if( args.password == None ):
+            sys.exit("No password provided.")
+        else:
+            login(args.email, args.password)
+    else:
+        print("No need to authenticate. Valid tokens already present in " + tokensFilename)
+        if( time.time() > expiration ):
+            print("Access token expired. Refreshing token.")
+            refreshToken(args.email)
+    requestData(args.data)
