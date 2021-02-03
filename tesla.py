@@ -23,6 +23,7 @@ tokens = {
     "refresh_token": ""
 }
 expiration = 0
+verbose = False
 
 def gen_params():
     verifier_bytes = os.urandom(86)
@@ -39,7 +40,8 @@ def loadTokens():
             expiration = tokens["created_at"] + tokens["expires_in"] - 86400
             return True
     except IOError as e:
-        print("Could not read from file %s: %s (pressing on in hopes of alternate authenticaiton)"%(tokensFilename, str(e)))
+        if( verbose ):
+            print("Could not read from file %s: %s (pressing on in hopes of alternate authenticaiton)"%(tokensFilename, str(e)))
         return False
 
 def saveTokens():
@@ -48,7 +50,8 @@ def saveTokens():
             W.write(json.dumps(tokens))
             return True
     except IOError as e:
-        print("Could not write to file %s: %s"%(tokensFilename, str(e)))
+        if( verbose ):
+            print("Could not write to file %s: %s"%(tokensFilename, str(e)))
         return False
 
 def login(email, password):
@@ -76,7 +79,8 @@ def login(email, password):
         resp = session.get("https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
 
         if resp.ok and "<title>" in resp.text:
-            print(f"Get auth form success - {attempt + 1} attempt(s).")
+            if( verbose ):
+                print(f"Get auth form success - {attempt + 1} attempt(s).")
             break
         time.sleep(3)
     else:
@@ -101,7 +105,8 @@ def login(email, password):
             "https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params, data=data, allow_redirects=False
         )
         if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
-            print(f"Post auth form success - {attempt + 1} attempt(s).")
+            if( verbose ):
+                print(f"Post auth form success - {attempt + 1} attempt(s).")
             break
         time.sleep(3)
     else:
@@ -129,14 +134,16 @@ def login(email, password):
         #         }
         #     ]
         # }
-        print(resp.text)
+        if( verbose ):
+            print(resp.text)
         factor_id = resp.json()["data"][0]["id"]
 
         # Can use Passcode
         data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "YOUR_PASSCODE"}
         resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
         # ^^ Content-Type - application/json
-        print(resp.text)
+        if( verbose ):
+            print(resp.text)
         # {
         #     "data": {
         #         "id": "63375dc0-3a11-11eb-8b23-75a3281a8aa8",
@@ -159,7 +166,8 @@ def login(email, password):
         #     "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
         # )
         # # ^^ Content-Type - application/json
-        # print(resp.text)
+        if( verbose ):
+            print(resp.text)
         # # {
         # #     "data": {
         # #         "valid": true,
@@ -186,14 +194,16 @@ def login(email, password):
                 allow_redirects=False,
             )
             if resp.headers.get("location"):
-                print(f"Got location in {attempt + 1} attempt(s).")
+                if( verbose ):
+                    print(f"Got location in {attempt + 1} attempt(s).")
                 break
         else:
             raise ValueError(f"Didn't get location in {MAX_ATTEMPTS} attempts.")
 
     # Step 3: Exchange authorization code for bearer token
     code = parse_qs(resp.headers["location"])["https://auth.tesla.com/void/callback?code"]
-    # print("Code -", code)
+    if( verbose ):
+        print("Code -", code)
     
     headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
     payload = {
@@ -208,7 +218,8 @@ def login(email, password):
     resp_json = resp.json()
     refresh_token = resp_json["refresh_token"]
     access_token = resp_json["access_token"]
-    # print("{\"refresh_token\": \"" + refresh_token + "\"}")
+    if( verbose ):
+        print("{\"refresh_token\": \"" + refresh_token + "\"}")
 
     # Step 4: Exchange bearer token for access token
     headers["authorization"] = "bearer " + access_token
@@ -242,7 +253,8 @@ def refreshToken(email):
     resp_json = resp.json()
     refresh_token = resp_json["refresh_token"]
     access_token = resp_json["access_token"]
-    print("{\"refresh_token\": \"" + refresh_token + "\"}")
+    if( verbose ):
+        print("{\"refresh_token\": \"" + refresh_token + "\"}")
 
     # Step 4: Exchange bearer token for access token
     headers["authorization"] = "bearer " + access_token
@@ -260,8 +272,16 @@ def refreshToken(email):
     tokens["expires_in"] = resp_json["expires_in"]
     saveTokens()
 
+def getVehicleId(vehicle):
+    myVehicles = requestData('vehicles')
+    myVehicleId = json.loads(myVehicles)["response"][vehicle]["id"]
+    if( verbose ):
+        print("vehicle_id for entry %d: %s"%(vehicle, str(myVehicleId)))
+    return myVehicleId
+
 def requestData(dataPart):
-    print("Requesting data: \"%s\""%(dataPart))
+    if( verbose ):
+        print("Requesting data: \"%s\""%(dataPart))
     session = requests.Session()
     headers = {
         "user-agent": UA,
@@ -272,28 +292,61 @@ def requestData(dataPart):
     owner_headers = {**headers, "authorization": "bearer " + tokens["access_token"]}
 
     resp = session.get("https://owner-api.teslamotors.com/api/1/" + dataPart, headers=owner_headers)
-    print(resp.text)
-    print()
+    if( verbose ):
+        print(resp.text)
+        print()
+    return resp.text
+
+def postCommand(command):
+    if( verbose ):
+        print("Sending command: \"%s\""%(command))
+    session = requests.Session()
+    headers = {
+        "user-agent": UA,
+        "x-tesla-user-agent": X_TESLA_USER_AGENT,
+        "authorization": "bearer " + tokens["access_token"]
+        }
+ 
+    owner_headers = {**headers, "authorization": "bearer " + tokens["access_token"]}
+
+    resp = session.post("https://owner-api.teslamotors.com/api/1/" + command, headers=owner_headers)
+    if( verbose ):
+        print(resp.text)
+        print()
+    return resp.text
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--email', type=str, required=True, help='E-mail used for myTesla account')
     parser.add_argument('-p', '--password', type=str, required=False, default=None, help='myTesla account password')
     parser.add_argument('-f', '--tokensfile', type=str, required=False, default="tesla.token", help='filename to use for token')
-    parser.add_argument('-d', '--data', type=str, required=False, default="vehicles", help='data part to request')
+    parser.add_argument('-d', '--data', type=str, required=False, default=None, help='data part to request, use "#" as placeholder for "vehicle_id" if required')
+    parser.add_argument('-c', '--command', type=str, required=False, default=None, help='command to send, use "#" as placeholder for "vehicle_id" if required')
+    parser.add_argument('-v', '--vehicle', type=int, required=False, default=0, help='vehicle number to use, dafeults to "0"')
+    parser.add_argument('--verbose', required=False, default=False, action='store_true', help='be verbose')
     args = parser.parse_args()
 
+    verbose = args.verbose
     tokensFilename = args.tokensfile
     if( not loadTokens() ):
-        print("Tokens file not found: " + args.tokensfile)
-        print("Trying login with provided credentials")
+        if( verbose ):
+            print("Tokens file not found: " + args.tokensfile)
+            print("Trying login with provided credentials")
         if( args.password == None ):
             sys.exit("No password provided.")
         else:
             login(args.email, args.password)
     else:
-        print("No need to authenticate. Valid tokens already present in " + tokensFilename)
+        if( verbose ):
+            print("No need to authenticate. Valid tokens already present in " + tokensFilename)
         if( time.time() > expiration ):
-            print("Access token expired. Refreshing token.")
+            if( verbose ):
+                print("Access token expired. Refreshing token.")
             refreshToken(args.email)
-    requestData(args.data)
+    vehicleID = getVehicleId(args.vehicle)
+    if( args.data != None ):
+        response = requestData(args.data.replace("#", str(vehicleID)))
+        print(json.loads(response)["response"])
+    if( args.command != None ):
+        response = postCommand(args.command.replace("#", str(vehicleID)))
+        print(json.loads(response)["response"])
