@@ -10,7 +10,7 @@ import json
 from urllib.parse import parse_qs
 import requests
 
-MAX_ATTEMPTS = 10
+MAX_ATTEMPTS = 7
 CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
 UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
 X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
