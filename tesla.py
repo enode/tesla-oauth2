@@ -26,6 +26,7 @@ def gen_params():
 
 def login(args):
     email, password = args.email, args.password
+    session, resp, params, code_verifier = (None,) * 4
 
     headers = {
         "User-Agent": UA,
