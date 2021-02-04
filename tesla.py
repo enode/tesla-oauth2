@@ -1,12 +1,12 @@
+import argparse
 import base64
 import hashlib
+import json
 import os
-import sys
 import re
 import time
-import argparse
-import json
 from urllib.parse import parse_qs
+
 import requests
 
 MAX_ATTEMPTS = 7
@@ -26,22 +26,6 @@ def gen_params():
     code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier).digest()).rstrip(b"=")
     state = base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
     return code_verifier, code_challenge, state
-
-
-def loadTokens():
-    global tokens, expiration
-    try:
-        with open(tokensFilename, "r") as R:
-            tokens = json.load(R)
-            expiration = tokens["created_at"] + tokens["expires_in"] - 86400
-            return True
-    except IOError as e:
-        if verbose:
-            print(
-                "Could not read from file %s: %s (pressing on in hopes of alternate authenticaiton)"
-                % (tokensFilename, str(e))
-            )
-        return False
 
 
 def saveTokens():
@@ -243,88 +227,6 @@ def login(email, password):
     saveTokens()
 
 
-def refreshToken(email):
-    global tokens
-
-    headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
-    payload = {
-        "grant_type": "refresh_token",
-        "client_id": "ownerapi",
-        "refresh_token": tokens["refresh_token"],
-        "scope": "openid email offline_access",
-    }
-    session = requests.Session()
-
-    resp = session.post("https://auth.tesla.com/oauth2/v3/token", headers=headers, json=payload)
-    resp_json = resp.json()
-    refresh_token = resp_json["refresh_token"]
-    access_token = resp_json["access_token"]
-    if verbose:
-        print('{"refresh_token": "' + refresh_token + '"}')
-
-    # Step 4: Exchange bearer token for access token
-    headers["authorization"] = "bearer " + access_token
-    payload = {
-        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        "client_id": CLIENT_ID,
-    }
-    resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
-
-    # save our tokens
-    resp_json = resp.json()
-    tokens["refresh_token"] = refresh_token
-    tokens["access_token"] = resp_json["access_token"]
-    tokens["created_at"] = resp_json["created_at"]
-    tokens["expires_in"] = resp_json["expires_in"]
-    saveTokens()
-
-
-def getVehicleId(vehicle):
-    myVehicles = requestData("vehicles")
-    myVehicleId = json.loads(myVehicles)["response"][vehicle]["id"]
-    if verbose:
-        print("vehicle_id for entry %d: %s" % (vehicle, str(myVehicleId)))
-    return myVehicleId
-
-
-def requestData(dataPart):
-    if verbose:
-        print('Requesting data: "%s"' % (dataPart))
-    session = requests.Session()
-    headers = {
-        "user-agent": UA,
-        "x-tesla-user-agent": X_TESLA_USER_AGENT,
-        "authorization": "bearer " + tokens["access_token"],
-    }
-
-    owner_headers = {**headers, "authorization": "bearer " + tokens["access_token"]}
-
-    resp = session.get("https://owner-api.teslamotors.com/api/1/" + dataPart, headers=owner_headers)
-    if verbose:
-        print(resp.text)
-        print()
-    return resp.text
-
-
-def postCommand(command):
-    if verbose:
-        print('Sending command: "%s"' % (command))
-    session = requests.Session()
-    headers = {
-        "user-agent": UA,
-        "x-tesla-user-agent": X_TESLA_USER_AGENT,
-        "authorization": "bearer " + tokens["access_token"],
-    }
-
-    owner_headers = {**headers, "authorization": "bearer " + tokens["access_token"]}
-
-    resp = session.post("https://owner-api.teslamotors.com/api/1/" + command, headers=owner_headers)
-    if verbose:
-        print(resp.text)
-        print()
-    return resp.text
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--email", type=str, required=True, help="E-mail used for myTesla account")
@@ -332,49 +234,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-f", "--tokensfile", type=str, required=False, default="tesla.token", help="filename to use for token"
     )
-    parser.add_argument(
-        "-d",
-        "--data",
-        type=str,
-        required=False,
-        default=None,
-        help='data part to request, use "#" as placeholder for "vehicle_id" if required',
-    )
-    parser.add_argument(
-        "-c",
-        "--command",
-        type=str,
-        required=False,
-        default=None,
-        help='command to send, use "#" as placeholder for "vehicle_id" if required',
-    )
-    parser.add_argument(
-        "-v", "--vehicle", type=int, required=False, default=0, help='vehicle number to use, dafeults to "0"'
-    )
     parser.add_argument("--verbose", required=False, default=False, action="store_true", help="be verbose")
     args = parser.parse_args()
 
     verbose = args.verbose
     tokensFilename = args.tokensfile
-    if not loadTokens():
-        if verbose:
-            print("Tokens file not found: " + args.tokensfile)
-            print("Trying login with provided credentials")
-        if args.password == None:
-            sys.exit("No password provided.")
-        else:
-            login(args.email, args.password)
-    else:
-        if verbose:
-            print("No need to authenticate. Valid tokens already present in " + tokensFilename)
-        if time.time() > expiration:
-            if verbose:
-                print("Access token expired. Refreshing token.")
-            refreshToken(args.email)
-    vehicleID = getVehicleId(args.vehicle)
-    if args.data != None:
-        response = requestData(args.data.replace("#", str(vehicleID)))
-        print(json.loads(response)["response"])
-    if args.command != None:
-        response = postCommand(args.command.replace("#", str(vehicleID)))
-        print(json.loads(response)["response"])
+    login(args.email, args.password)
