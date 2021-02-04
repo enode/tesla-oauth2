@@ -1,7 +1,6 @@
 import argparse
 import base64
 import hashlib
-import json
 import os
 import re
 import time
@@ -14,9 +13,6 @@ CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
 UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
 X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
 
-tokensFilename = ""
-tokens = {"access_token": "", "created_at": 0, "expires_in": 0, "refresh_token": ""}
-expiration = 0
 verbose = False
 
 
@@ -28,18 +24,9 @@ def gen_params():
     return code_verifier, code_challenge, state
 
 
-def saveTokens():
-    try:
-        with open(tokensFilename, "w") as W:
-            W.write(json.dumps(tokens))
-            return True
-    except IOError as e:
-        if verbose:
-            print("Could not write to file %s: %s" % (tokensFilename, str(e)))
-        return False
+def login(args):
+    email, password = args.email, args.password
 
-
-def login(email, password):
     headers = {
         "User-Agent": UA,
         "x-tesla-user-agent": X_TESLA_USER_AGENT,
@@ -218,25 +205,19 @@ def login(email, password):
     }
     resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
 
-    # save our tokens
-    resp_json = resp.json()
-    tokens["refresh_token"] = refresh_token
-    tokens["access_token"] = resp_json["access_token"]
-    tokens["created_at"] = resp_json["created_at"]
-    tokens["expires_in"] = resp_json["expires_in"]
-    saveTokens()
+    # save tokens to file
+    if args.file:
+        with open(args.file, "wb") as f:
+            f.write(resp.content)
+        print(f"Saved tokens to '{args.file}'.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--email", type=str, required=True, help="E-mail used for myTesla account")
-    parser.add_argument("-p", "--password", type=str, required=False, default=None, help="myTesla account password")
-    parser.add_argument(
-        "-f", "--tokensfile", type=str, required=False, default="tesla.token", help="filename to use for token"
-    )
+    parser.add_argument("-e", "--email", type=str, required=True, help="tesla account email")
+    parser.add_argument("-p", "--password", type=str, required=True, help="tesla account password")
+    parser.add_argument("-f", "--file", type=str, required=False, default=None, help="filename to save tokens")
     parser.add_argument("--verbose", required=False, default=False, action="store_true", help="be verbose")
     args = parser.parse_args()
 
-    verbose = args.verbose
-    tokensFilename = args.tokensfile
-    login(args.email, args.password)
+    login(args)
