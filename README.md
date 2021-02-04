@@ -7,4 +7,4 @@ A "proof-of-concept" script on how to interact with the recent OAuth2 changes fr
 - Run the script while passing in email and password along with a token file and setting your `YOUR_PASSCODE`
 
 ## Troubleshooting
-If you want to play with 2FA, you need to provide either a valid `ONE_OF_BACKUP_CODES` or your `YOUR_PASSCODE` from your 2FA setup and comment out the flow you will not use. If you are looking for documenation I suggest you check out https://github.com/timdorr/tesla-api
+If you want to play with 2FA, you need to provide either a valid `ONE_OF_BACKUP_CODES` or your `YOUR_PASSCODE` from your 2FA setup and comment out the flow you will not use. If you are looking for documentation I suggest you check out https://github.com/timdorr/tesla-api
