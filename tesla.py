@@ -13,8 +13,6 @@ CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
 UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
 X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
 
-verbose = False
-
 
 def gen_params():
     verifier_bytes = os.urandom(86)
@@ -27,6 +25,7 @@ def gen_params():
 def login(args):
     email, password = args.email, args.password
     session, resp, params, code_verifier = (None,) * 4
+    vprint = print if args.verbose else lambda _: None
 
     headers = {
         "User-Agent": UA,
@@ -52,8 +51,7 @@ def login(args):
         resp = session.get("https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
 
         if resp.ok and "<title>" in resp.text:
-            if verbose:
-                print(f"Get auth form success - {attempt + 1} attempt(s).")
+            vprint(f"Get auth form success - {attempt + 1} attempt(s).")
             break
         time.sleep(3)
     else:
@@ -82,8 +80,7 @@ def login(args):
             allow_redirects=False,
         )
         if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
-            if verbose:
-                print(f"Post auth form success - {attempt + 1} attempt(s).")
+            vprint(f"Post auth form success - {attempt + 1} attempt(s).")
             break
         time.sleep(3)
     else:
@@ -111,16 +108,14 @@ def login(args):
         #         }
         #     ]
         # }
-        if verbose:
-            print(resp.text)
+        vprint(resp.text)
         factor_id = resp.json()["data"][0]["id"]
 
         # Can use Passcode
         data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "YOUR_PASSCODE"}
         resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
         # ^^ Content-Type - application/json
-        if verbose:
-            print(resp.text)
+        vprint(resp.text)
         # {
         #     "data": {
         #         "id": "63375dc0-3a11-11eb-8b23-75a3281a8aa8",
@@ -143,8 +138,7 @@ def login(args):
         #     "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
         # )
         # # ^^ Content-Type - application/json
-        if verbose:
-            print(resp.text)
+        # vprint(resp.text)
         # # {
         # #     "data": {
         # #         "valid": true,
@@ -171,16 +165,14 @@ def login(args):
                 allow_redirects=False,
             )
             if resp.headers.get("location"):
-                if verbose:
-                    print(f"Got location in {attempt + 1} attempt(s).")
+                vprint(f"Got location in {attempt + 1} attempt(s).")
                 break
         else:
             raise ValueError(f"Didn't get location in {MAX_ATTEMPTS} attempts.")
 
     # Step 3: Exchange authorization code for bearer token
     code = parse_qs(resp.headers["location"])["https://auth.tesla.com/void/callback?code"]
-    if verbose:
-        print("Code -", code)
+    vprint("Code -", code)
 
     headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
     payload = {
@@ -192,11 +184,7 @@ def login(args):
     }
 
     resp = session.post("https://auth.tesla.com/oauth2/v3/token", headers=headers, json=payload)
-    resp_json = resp.json()
-    refresh_token = resp_json["refresh_token"]
-    access_token = resp_json["access_token"]
-    if verbose:
-        print('{"refresh_token": "' + refresh_token + '"}')
+    access_token = resp.json()["access_token"]
 
     # Step 4: Exchange bearer token for access token
     headers["authorization"] = "bearer " + access_token
@@ -206,7 +194,7 @@ def login(args):
     }
     resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
 
-    # save tokens to file
+    # Save tokens to file
     if args.file:
         with open(args.file, "wb") as f:
             f.write(resp.content)
