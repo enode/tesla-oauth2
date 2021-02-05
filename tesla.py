@@ -79,6 +79,10 @@ def login(args):
             data=data,
             allow_redirects=False,
         )
+
+        if "We could not sign you in" in resp.text and resp.status_code == 401:
+            raise ValueError("Invalid credentials.")
+
         if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
             vprint(f"Post auth form success - {attempt + 1} attempt(s).")
             break
@@ -112,47 +116,50 @@ def login(args):
         factor_id = resp.json()["data"][0]["id"]
 
         # Can use Passcode
-        data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": "YOUR_PASSCODE"}
-        resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
-        # ^^ Content-Type - application/json
-        vprint(resp.text)
-        # {
-        #     "data": {
-        #         "id": "63375dc0-3a11-11eb-8b23-75a3281a8aa8",
-        #         "challengeId": "c7febba0-3a10-11eb-a6d9-2179cb5bc651",
-        #         "factorId": "41d6c32c-b14a-4cef-9834-36f819d1fb4b",
-        #         "passCode": "985203",
-        #         "approved": true,
-        #         "flagged": false,
-        #         "valid": true,
-        #         "createdAt": "2020-12-09T03:26:31.000Z",
-        #         "updatedAt": "2020-12-09T03:26:31.000Z",
-        #     }
-        # }
-        if "error" in resp.text or not resp.json()["data"]["approved"] or not resp.json()["data"]["valid"]:
-            raise ValueError("Invalid passcode.")
+        if args.passcode:
+            data = {"transaction_id": transaction_id, "factor_id": factor_id, "passcode": args.passcode}
+            resp = session.post("https://auth.tesla.com/oauth2/v3/authorize/mfa/verify", headers=headers, json=data)
+            vprint(resp.text)
+            # {
+            #     "data": {
+            #         "id": "63375dc0-3a11-11eb-8b23-75a3281a8aa8",
+            #         "challengeId": "c7febba0-3a10-11eb-a6d9-2179cb5bc651",
+            #         "factorId": "41d6c32c-b14a-4cef-9834-36f819d1fb4b",
+            #         "passCode": "985203",
+            #         "approved": true,
+            #         "flagged": false,
+            #         "valid": true,
+            #         "createdAt": "2020-12-09T03:26:31.000Z",
+            #         "updatedAt": "2020-12-09T03:26:31.000Z",
+            #     }
+            # }
+            if "error" in resp.text or not resp.json()["data"]["approved"] or not resp.json()["data"]["valid"]:
+                raise ValueError("Invalid passcode.")
 
         # Can use Backup Passcode
-        # data = {"transaction_id": transaction_id, "backup_code": "3HZRJVC6D"}
-        # resp = session.post(
-        #     "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
-        # )
-        # # ^^ Content-Type - application/json
-        # vprint(resp.text)
-        # # {
-        # #     "data": {
-        # #         "valid": true,
-        # #         "reason": null,
-        # #         "message": null,
-        # #         "enrolled": true,
-        # #         "generatedAt": "2020-12-09T06:14:23.170Z",
-        # #         "codesRemaining": 9,
-        # #         "attemptsRemaining": 10,
-        # #         "locked": false,
-        # #     }
-        # # }
-        # if "error" in resp.text or not resp.json()["data"]["valid"]:
-        #     raise ValueError("Invalid backup passcode.")
+        if args.backup_passcode:
+            data = {"transaction_id": transaction_id, "backup_code": args.backup_passcode}
+            resp = session.post(
+                "https://auth.tesla.com/oauth2/v3/authorize/mfa/backupcodes/attempt", headers=headers, json=data
+            )
+            vprint(resp.text)
+            # {
+            #     "data": {
+            #         "valid": true,
+            #         "reason": null,
+            #         "message": null,
+            #         "enrolled": true,
+            #         "generatedAt": "2020-12-09T06:14:23.170Z",
+            #         "codesRemaining": 9,
+            #         "attemptsRemaining": 10,
+            #         "locked": false,
+            #     }
+            # }
+            if "error" in resp.text or not resp.json()["data"]["valid"]:
+                raise ValueError("Invalid backup passcode.")
+
+        if not args.passcode and not args.backup_passcode:
+            raise ValueError("Account has MFA enabled. Please provide --passcode or --backup_passcode.")
 
         data = {"transaction_id": transaction_id}
 
@@ -198,15 +205,19 @@ def login(args):
     if args.file:
         with open(args.file, "wb") as f:
             f.write(resp.content)
-        print(f"Saved tokens to '{args.file}'.")
+        vprint(f"Saved tokens to '{args.file}'.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--email", type=str, required=True, help="tesla account email")
-    parser.add_argument("-p", "--password", type=str, required=True, help="tesla account password")
-    parser.add_argument("-f", "--file", type=str, required=False, default=None, help="filename to save tokens")
-    parser.add_argument("--verbose", required=False, default=False, action="store_true", help="be verbose")
-    args = parser.parse_args()
+    parser.add_argument("-e", "--email", type=str, required=True, help="Tesla account email")
+    parser.add_argument("-p", "--password", type=str, required=True, help="Tesla account password")
+    parser.add_argument("-f", "--file", type=str, required=False, default=None, help="Filename to save tokens")
+    parser.add_argument("--verbose", required=False, default=False, action="store_true", help="Be verbose")
 
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument("--passcode", help="Passcode generated by your authenticator app")
+    group.add_argument("--backup_passcode", help="Unused backup passcode")
+
+    args = parser.parse_args()
     login(args)
