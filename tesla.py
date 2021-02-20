@@ -27,11 +27,7 @@ def login(args):
     session, resp, params, code_verifier = (None,) * 4
     vprint = print if args.verbose else lambda _: None
 
-    headers = {
-        "User-Agent": UA,
-        "x-tesla-user-agent": X_TESLA_USER_AGENT,
-        "X-Requested-With": "com.teslamotors.tesla",
-    }
+    headers = { }
 
     # Step 1: Obtain the login page
     for attempt in range(MAX_ATTEMPTS):
