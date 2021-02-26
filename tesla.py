@@ -29,13 +29,7 @@ def gen_params():
 def create_driver():
     options = webdriver.ChromeOptions()
     options.headless = True
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
     driver = webdriver.Chrome(options=options)
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {"source": "Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}})"},
-    )
     driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": UA})
     return driver
 
