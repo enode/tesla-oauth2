@@ -29,4 +29,4 @@ optional arguments:
 ```
 
 ## Troubleshooting
-If you are looking for documentation I suggest you check out https://github.com/timdorr/tesla-api
+If you are looking for documentation we suggest you check out https://github.com/timdorr/tesla-api
