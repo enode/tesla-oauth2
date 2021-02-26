@@ -37,7 +37,7 @@ def create_driver():
 def login(args):
     email, password = args.email, args.password
     session, resp, params, code_verifier = (None,) * 4
-    vprint = print if args.verbose else lambda _: None
+    vprint = print if args.verbose else lambda *_: None
 
     headers = {
         "User-Agent": UA,
