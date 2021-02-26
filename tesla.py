@@ -208,7 +208,7 @@ def login(args):
 
     # Step 3: Exchange authorization code for bearer token
     code = parse_qs(resp.headers["location"])["https://auth.tesla.com/void/callback?code"]
-    vprint = print if args.verbose else lambda *_: None
+    vprint("Code -", code)
 
     headers = {"user-agent": UA, "x-tesla-user-agent": X_TESLA_USER_AGENT}
     payload = {
