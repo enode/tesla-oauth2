@@ -7,6 +7,10 @@ import time
 from urllib.parse import parse_qs
 
 import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 MAX_ATTEMPTS = 7
 CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
@@ -22,41 +26,70 @@ def gen_params():
     return code_verifier, code_challenge, state
 
 
+def create_driver():
+    options = webdriver.ChromeOptions()
+    options.headless = True
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+    driver = webdriver.Chrome(options=options)
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}})"},
+    )
+    driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": UA})
+    return driver
+
+
 def login(args):
     email, password = args.email, args.password
     session, resp, params, code_verifier = (None,) * 4
     vprint = print if args.verbose else lambda _: None
 
-    headers = { }
+    headers = {
+        "User-Agent": UA,
+        "x-tesla-user-agent": X_TESLA_USER_AGENT,
+        "X-Requested-With": "com.teslamotors.tesla",
+    }
 
     # Step 1: Obtain the login page
-    for attempt in range(MAX_ATTEMPTS):
-        code_verifier, code_challenge, state = gen_params()
+    code_verifier, code_challenge, state = gen_params()
 
-        params = (
-            ("client_id", "ownerapi"),
-            ("code_challenge", code_challenge),
-            ("code_challenge_method", "S256"),
-            ("redirect_uri", "https://auth.tesla.com/void/callback"),
-            ("response_type", "code"),
-            ("scope", "openid email offline_access"),
-            ("state", state),
-        )
+    params = (
+        ("audience", ""),
+        ("client_id", "ownerapi"),
+        ("code_challenge", code_challenge),
+        ("code_challenge_method", "S256"),
+        ("locale", "en"),
+        ("prompt", "login"),
+        ("redirect_uri", "https://auth.tesla.com/void/callback"),
+        ("response_type", "code"),
+        ("scope", "openid email offline_access"),
+        ("state", state),
+    )
 
-        session = requests.Session()
-        resp = session.get("https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
+    session = requests.Session()
+    resp = session.get("https://auth.tesla.com/oauth2/v3/authorize", headers=headers, params=params)
 
-        if resp.ok and "<title>" in resp.text:
-            vprint(f"Get auth form success - {attempt + 1} attempt(s).")
-            break
-        time.sleep(3)
+    if "<title>" not in resp.text:
+        # response contains js, running headless chrome then
+        driver = create_driver()
+        driver.get(resp.request.url)
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name=identity]")))
+
+        # inject browser cookies to requests.Session
+        for cookie in driver.get_cookies():
+            session.cookies.set(cookie["name"], cookie["value"])
+
+        csrf = driver.find_element_by_css_selector("input[name=_csrf]").get_attribute("value")
+        transaction_id = driver.find_element_by_css_selector("input[name=transaction_id]").get_attribute("value")
+        driver.quit()
+
     else:
-        raise ValueError(f"Didn't get auth form in {MAX_ATTEMPTS} attempts.")
+        # response is ok, contains csrf and transaction_id
+        csrf = re.search(r'name="_csrf".+value="([^"]+)"', resp.text).group(1)
+        transaction_id = re.search(r'name="transaction_id".+value="([^"]+)"', resp.text).group(1)
 
     # Step 2: Obtain an authorization code
-    csrf = re.search(r'name="_csrf".+value="([^"]+)"', resp.text).group(1)
-    transaction_id = re.search(r'name="transaction_id".+value="([^"]+)"', resp.text).group(1)
-
     data = {
         "_csrf": csrf,
         "_phase": "authenticate",
