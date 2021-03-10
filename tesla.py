@@ -35,6 +35,8 @@ def create_driver():
 
 
 def login(args):
+    print("started")
+
     email, password = args.email, args.password
     session, resp, params, code_verifier = (None,) * 4
     vprint = print if args.verbose else lambda *_: None
@@ -109,6 +111,10 @@ def login(args):
         if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
             vprint(f"Post auth form success - {attempt + 1} attempt(s).")
             break
+        elif resp.ok and (resp.status_code == 200 and "/mfa/verify" in resp.text):
+            # break here itself, if mfa is detected. No need to keep the loop running
+            break
+
         time.sleep(3)
     else:
         raise ValueError(f"Didn't post auth form in {MAX_ATTEMPTS} attempts.")
