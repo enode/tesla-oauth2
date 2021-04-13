@@ -146,7 +146,9 @@ def login(args):
             factors = resp.json()["data"]
             device_name = f"Device #{args.device}"
             devices = [f for f in factors if f["name"] == device_name]
-            if not devices:
+            if not devices and len(factors) == 1:
+                devices = factors
+            elif not devices:
                 raise ValueError(f"Can't find device `{device_name}`")
             factor_id = devices[0]["id"]
 
