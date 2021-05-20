@@ -14,9 +14,18 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 MAX_ATTEMPTS = 7
 CLIENT_ID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
-UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
-X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
+# UA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
+# X_TESLA_USER_AGENT = "TeslaApp/3.10.9-433/adff2e065/android/10"
 
+# The documentation here:
+#   https://tesla-api.timdorr.com/api-basics/authentication Says:
+# "Avoid setting a User-Agent header that looks like a browser (such
+#  as Chrome or Safari). The SSO service has protections in place
+#  that will require executing JavaScript if a browser-like user
+#  agent is detected."
+# So to get a token I set the strings to:
+UA = ""
+X_TESLA_USER_AGENT = ""
 
 def gen_params():
     verifier_bytes = os.urandom(86)
